@@ -5,10 +5,10 @@
 // Definicje pinów dla mostka H (do sterowania dwoma silnikami)
 #define MOTOR_A1 32     // Pin A1 mostka H dla silnika 1
 #define MOTOR_A2 33     // Pin A2 mostka H dla silnika 1
-#define MOTOR_B1 34     // Pin B1 mostka H dla silnika 2
-#define MOTOR_B2 35     // Pin B2 mostka H dla silnika 2
-#define MOTOR_PWM_A 25  // Pin PWM dla silnika 1
-#define MOTOR_PWM_B 26  // Pin PWM dla silnika 2
+#define MOTOR_B1 25     // Pin B1 mostka H dla silnika 2
+#define MOTOR_B2 26     // Pin B2 mostka H dla silnika 2
+#define MOTOR_PWM_A 27  // Pin PWM dla silnika 1
+#define MOTOR_PWM_B 19  // Pin PWM dla silnika 2
 
 // Struktura danych odbieranych
 typedef struct {
@@ -24,8 +24,10 @@ JoystickData joystickData;
 
 // Prędkości sterowania silnikiem
 #define MAX_SPEED 255  // Maksymalna prędkość silnika (możesz dostosować w zależności od mostka H)
-#define MIN_SPEED 50      // Minimalna prędkość (np. dla bardzo wolnej jazdy)
+#define MIN_SPEED 100     // Minimalna prędkość (bardzo wolna jazda)
 #define NORMAL_SPEED 150  // Prędkość normalna (gdy joystick w pozycji wyjściowej)
+#define TURN_SPEED 90     // Predkość jednego z silników podczas skręcania
+#define MIN_TURN_SPEED 80 //
 
 // Enum dla kierunków
 enum Direction {
@@ -58,12 +60,12 @@ void setup() {
     esp_now_register_recv_cb(on_receive);
 
     // Ustawienie pinów mostka H
-    // pinMode(MOTOR_A1, OUTPUT);
-    // pinMode(MOTOR_A2, OUTPUT);
-    // pinMode(MOTOR_B1, OUTPUT);
-    // pinMode(MOTOR_B2, OUTPUT);
-    // pinMode(MOTOR_PWM_A, OUTPUT);
-    // pinMode(MOTOR_PWM_B, OUTPUT);
+    pinMode(MOTOR_A1, OUTPUT);
+    pinMode(MOTOR_A2, OUTPUT);
+    pinMode(MOTOR_B1, OUTPUT);
+    pinMode(MOTOR_B2, OUTPUT);
+    pinMode(MOTOR_PWM_A, OUTPUT);
+    pinMode(MOTOR_PWM_B, OUTPUT);
 }
 
 void loop() {
@@ -78,21 +80,6 @@ void loop() {
     int motorSpeedA = motorSpeed;  // Prędkość jest już określona przez speed
     int motorSpeedB = motorSpeed;
 
-    set_direction(forwardBackward, leftRight);
-
-    control_motors(forwardBackward, leftRight, motorSpeedA, motorSpeedB);
-
-    delay(200);
-}
-
-
-// Funkcja, która się automatycznie wykonuje w tle, gdy odbiornik otrzyma dane przez ESP-NOW
-void on_receive(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
-    // Kopiowanie danych do zmiennej lokalnej joystickData
-    memcpy(&joystickData, data, sizeof(joystickData));
-}
-
-void set_direction(Direction &forwardBackward, Direction &leftRight) {
     // Gałka w pozycji neutralnej z uwzględnionym offsetem
     if (joystickData.yValue < (1875 + JOYSTICK_OFFSET) &&
         joystickData.yValue > (1875 - JOYSTICK_OFFSET) &&
@@ -120,78 +107,80 @@ void set_direction(Direction &forwardBackward, Direction &leftRight) {
         leftRight = RIGHT;  // Skręt w prawo
         Serial.println("Skręt w prawo");
     }
+
+    // Jazda przód tył, nie skręca
+    if (forwardBackward != IDLE && leftRight == IDLE) {
+        if (forwardBackward == FORWARD) {
+            digitalWrite(MOTOR_A1, LOW);
+            digitalWrite(MOTOR_A2, HIGH);
+            digitalWrite(MOTOR_B1, LOW);
+            digitalWrite(MOTOR_B2, HIGH);
+
+        } else if (forwardBackward == BACKWARD) {  // Jazda do tyłu: oba silniki do tyłu
+            digitalWrite(MOTOR_A1, HIGH);
+            digitalWrite(MOTOR_A2, LOW);
+            digitalWrite(MOTOR_B1, HIGH);
+            digitalWrite(MOTOR_B2, LOW);
+        }
+        // Jazda przód tył i skręca
+    } else if (forwardBackward != IDLE && leftRight != IDLE) {
+        if (forwardBackward == FORWARD && leftRight == RIGHT) {
+            digitalWrite(MOTOR_A1, LOW);
+            digitalWrite(MOTOR_A2, HIGH);
+            digitalWrite(MOTOR_B1, LOW);
+            digitalWrite(MOTOR_B2, HIGH);
+            motorSpeedB = map(motorSpeedA, MIN_SPEED, MAX_SPEED, MIN_TURN_SPEED, TURN_SPEED);  // Silnik 1 jedzie wolniej;
+
+        } else if (forwardBackward == FORWARD && leftRight == LEFT) {  // Jazda do tyłu: oba silniki do tyłu
+            digitalWrite(MOTOR_A1, LOW);
+            digitalWrite(MOTOR_A2, HIGH);
+            digitalWrite(MOTOR_B1, LOW);
+            digitalWrite(MOTOR_B2, HIGH);
+            motorSpeedA = map(motorSpeedA, MIN_SPEED, MAX_SPEED, MIN_TURN_SPEED, TURN_SPEED);
+        } else if (forwardBackward == BACKWARD && leftRight == RIGHT) {  // Jazda do tyłu: oba silniki do tyłu
+            digitalWrite(MOTOR_A1, HIGH);
+            digitalWrite(MOTOR_A2, LOW);
+            digitalWrite(MOTOR_B1, HIGH);
+            digitalWrite(MOTOR_B2, LOW);
+            motorSpeedB = map(motorSpeedA, MIN_SPEED, MAX_SPEED, MIN_TURN_SPEED, TURN_SPEED);
+        } else if (forwardBackward == BACKWARD && leftRight == LEFT) {  // Jazda do tyłu: oba silniki do tyłu
+            digitalWrite(MOTOR_A1, HIGH);
+            digitalWrite(MOTOR_A2, LOW);
+            digitalWrite(MOTOR_B1, HIGH);
+            digitalWrite(MOTOR_B2, LOW);
+            motorSpeedA = map(motorSpeedA, MIN_SPEED, MAX_SPEED, MIN_TURN_SPEED, TURN_SPEED);
+        }
+        // Brak ruchu przód tył natomiast skręca
+    } else if (forwardBackward == IDLE && leftRight != IDLE) {
+        if (leftRight == RIGHT) {
+            digitalWrite(MOTOR_A1, HIGH);
+            digitalWrite(MOTOR_A2, LOW);
+            digitalWrite(MOTOR_B1, HIGH);
+            digitalWrite(MOTOR_B2, LOW);
+            motorSpeedB = map(motorSpeedA, MIN_SPEED, MAX_SPEED, MIN_TURN_SPEED, TURN_SPEED);
+        } else if (leftRight == LEFT) {
+            digitalWrite(MOTOR_A1, HIGH);
+            digitalWrite(MOTOR_A2, LOW);
+            digitalWrite(MOTOR_B1, HIGH);
+            digitalWrite(MOTOR_B2, LOW);
+            motorSpeedA = map(motorSpeedA, MIN_SPEED, MAX_SPEED, MIN_TURN_SPEED, TURN_SPEED);
+        }
+        // Inaczej oba silniki stoją
+    } else {
+        digitalWrite(MOTOR_A1, LOW);
+        digitalWrite(MOTOR_A2, LOW);
+        digitalWrite(MOTOR_B1, LOW);
+        digitalWrite(MOTOR_B2, LOW);
+    }
+    analogWrite(MOTOR_PWM_A, motorSpeedA);
+    analogWrite(MOTOR_PWM_B, motorSpeedB);
+    delay(200);
 }
 
-void control_motors(Direction &forwardBackward, Direction &leftRight, int &motorSpeedA,
-                    int &motorSpeedB) {
-    // Logika sterowania silnikami w zależności od kierunku
-    switch (forwardBackward) {
-        case FORWARD:
-            // Jazda do przodu: oba silniki do przodu
-            // digitalWrite(MOTOR_A1, HIGH);
-            // digitalWrite(MOTOR_A2, LOW);
-            // digitalWrite(MOTOR_B1, HIGH);
-            // digitalWrite(MOTOR_B2, LOW);
-            break;
-
-        case BACKWARD:
-            // Jazda do tyłu: oba silniki do tyłu
-            // digitalWrite(MOTOR_A1, LOW);
-            // digitalWrite(MOTOR_A2, HIGH);
-            // digitalWrite(MOTOR_B1, LOW);
-            // digitalWrite(MOTOR_B2, HIGH);
-            break;
-
-        case IDLE:
-            // Na postoju: oba silniki zatrzymane
-            // digitalWrite(MOTOR_A1, LOW);
-            // digitalWrite(MOTOR_A2, LOW);
-            // digitalWrite(MOTOR_B1, LOW);
-            // digitalWrite(MOTOR_B2, LOW);
-            break;
-    }
-
-
-
-
-    // CZY TO MA SENS ŻEBY STEROWAĆ SILNIKAMI?? CHYBA TYLKO BĘDE ZMIENIAŁ PRĘDKOŚĆ
-
-
-
-
-    switch (leftRight) {
-        case LEFT:
-            // Skręt w lewo: silnik 1 do przodu, silnik 2 do tyłu
-            motorSpeedB =
-                map(motorSpeedB, MIN_SPEED, MAX_SPEED, 0, MIN_SPEED);  // Silnik 2 jedzie wolniej
-            // digitalWrite(MOTOR_A1, HIGH);
-            // digitalWrite(MOTOR_A2, LOW);
-            // digitalWrite(MOTOR_B1, LOW);
-            // digitalWrite(MOTOR_B2, HIGH);
-            break;
-
-        case RIGHT:
-            // Skręt w prawo: silnik 1 do tyłu, silnik 2 do przodu
-            motorSpeedA =
-                map(motorSpeedA, MIN_SPEED, MAX_SPEED, 0, MIN_SPEED);  // Silnik 1 jedzie wolniej
-            // digitalWrite(MOTOR_A1, LOW);
-            // digitalWrite(MOTOR_A2, HIGH);
-            // digitalWrite(MOTOR_B1, HIGH);
-            // digitalWrite(MOTOR_B2, LOW);
-            break;
-
-        case IDLE:
-            // Na postoju: oba silniki zatrzymane
-            // digitalWrite(MOTOR_A1, LOW);
-            // digitalWrite(MOTOR_A2, LOW);
-            // digitalWrite(MOTOR_B1, LOW);
-            // digitalWrite(MOTOR_B2, LOW);
-            break;
-    }
-
-    // Ustawienie prędkości silników
-    // analogWrite(MOTOR_PWM_A, motorSpeedA);
-    // analogWrite(MOTOR_PWM_B, motorSpeedB);
+// Funkcja, która się automatycznie wykonuje w tle, gdy odbiornik otrzyma dane przez ESP-NOW
+void on_receive(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+    // Kopiowanie danych do zmiennej lokalnej joystickData
+    memcpy(&joystickData, data, sizeof(joystickData));
 }
 
 void debug() {
