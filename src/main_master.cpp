@@ -69,7 +69,7 @@ void loop() {
     // Odczyt joysticka prędkości
     joystickData.speed = analogRead(VRY_SPEED_PIN);
 
-    // debug();
+    debug();
 
     // Wysyłanie danych
     esp_now_send(NULL, (uint8_t *)&joystickData, sizeof(joystickData));
