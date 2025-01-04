@@ -8,6 +8,8 @@
 
 #define VRY_SPEED_PIN 34  // X-axis dla joysticka prędkości
 
+#define LED 2
+
 // Struktura danych do wysyłania
 typedef struct {
     int xDir;   // Kierunek: lewo/prawo
@@ -23,26 +25,30 @@ void debug();
 
 void setup() {
     Serial.begin(115200);
+    pinMode(LED,OUTPUT);
 
     // Inicjalizacja WiFi w trybie STA
     WiFi.mode(WIFI_STA);
     if (esp_now_init() != ESP_OK) {
         Serial.println("Błąd inicjalizacji ESP-NOW");
-        return;
     }
     esp_now_register_send_cb(onSent);
 
     // Dodanie odbiornika (adres MAC)
     uint8_t broadcastAddress[] = {0xec, 0x62, 0x60, 0x77, 0x32, 0x3c};
     esp_now_peer_info_t peerInfo;
+    memset(&peerInfo, 0, sizeof(peerInfo));
     memcpy(peerInfo.peer_addr, broadcastAddress, 6);
     peerInfo.channel = 0;
     peerInfo.encrypt = false;
 
     // Łączenie w pare
-    if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    while (esp_now_add_peer(&peerInfo) != ESP_OK) {
+        digitalWrite(LED,HIGH);
         Serial.println("Nie udało się dodać odbiornika");
-        return;
+        delay(500);
+        digitalWrite(LED,LOW);
+        delay(500);
     }
 }
 
@@ -58,7 +64,6 @@ void loop() {
 
     // Wysyłanie danych
     esp_now_send(NULL, (uint8_t *)&joystickData, sizeof(joystickData));
-    delay(100);
 }
 
 // Callback dla statusu wysyłania
@@ -72,7 +77,6 @@ void debug() {
     Serial.print(joystickData.xDir);
     Serial.print(", Y: ");
     Serial.print(joystickData.yDir);
-    Serial.print(", Przycisk: ");
     Serial.print(" | Prędkość: ");
     Serial.println(joystickData.speed);
 }
