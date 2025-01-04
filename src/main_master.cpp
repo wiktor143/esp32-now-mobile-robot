@@ -8,7 +8,7 @@
 
 #define VRY_SPEED_PIN 34  // X-axis dla joysticka prędkości
 
-#define LED 2
+#define LED 2  // Pin, do którego podpięta jest wbudowana dioda
 
 // Struktura danych do wysyłania
 typedef struct {
@@ -21,33 +21,42 @@ JoystickData joystickData;
 
 // Callback dla statusu wysyłania
 void onSent(const uint8_t *mac_addr, esp_now_send_status_t status);
+// Funkcja, która wypisuje wysyłane dane na serial monitor
 void debug();
 
 void setup() {
     Serial.begin(115200);
-    pinMode(LED,OUTPUT);
+    pinMode(LED, OUTPUT);
 
     // Inicjalizacja WiFi w trybie STA
     WiFi.mode(WIFI_STA);
-    if (esp_now_init() != ESP_OK) {
+    while (esp_now_init() != ESP_OK) {
         Serial.println("Błąd inicjalizacji ESP-NOW");
+        digitalWrite(LED, HIGH);
+        delay(500);
+        digitalWrite(LED, LOW);
+        delay(500);
     }
+    digitalWrite(LED, LOW);
+
+    // Rejestracja callbacka - funkcja onSent wywołana, gdy nadajnik wyśle dane
     esp_now_register_send_cb(onSent);
 
     // Dodanie odbiornika (adres MAC)
     uint8_t broadcastAddress[] = {0xec, 0x62, 0x60, 0x77, 0x32, 0x3c};
+    // Struktura do przechowywania informacji o konfiguracji komunikacji z danym odbiorcą
     esp_now_peer_info_t peerInfo;
+    // Zerowanie pamięci struktury
     memset(&peerInfo, 0, sizeof(peerInfo));
+    // Kopiowanie 6 bajtów (adres MAC) z tablicy do pola w strukturze peerInfo
     memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-    peerInfo.channel = 0;
-    peerInfo.encrypt = false;
 
     // Łączenie w pare
     while (esp_now_add_peer(&peerInfo) != ESP_OK) {
-        digitalWrite(LED,HIGH);
+        digitalWrite(LED, HIGH);
         Serial.println("Nie udało się dodać odbiornika");
         delay(500);
-        digitalWrite(LED,LOW);
+        digitalWrite(LED, LOW);
         delay(500);
     }
 }
@@ -60,7 +69,7 @@ void loop() {
     // Odczyt joysticka prędkości
     joystickData.speed = analogRead(VRY_SPEED_PIN);
 
-    debug();
+    // debug();
 
     // Wysyłanie danych
     esp_now_send(NULL, (uint8_t *)&joystickData, sizeof(joystickData));
@@ -69,14 +78,21 @@ void loop() {
 // Callback dla statusu wysyłania
 void onSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
     Serial.print("Wysłano dane, status: ");
-    Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Sukces" : "Niepowodzenie");
+    if (status == ESP_NOW_SEND_SUCCESS) {
+        Serial.println("Sukces");
+        digitalWrite(LED, LOW);
+    } else {
+        Serial.println("Niepowodzenie");
+        digitalWrite(LED, HIGH);
+    }
 }
+
 void debug() {
-    // Wyświetlanie danych w monitorze szeregowym
-    Serial.print("Kierunek - X: ");
+    Serial.print("Wysłano dane - ");
+    Serial.print("X: ");
     Serial.print(joystickData.xDir);
-    Serial.print(", Y: ");
+    Serial.print(" | Y: ");
     Serial.print(joystickData.yDir);
-    Serial.print(" | Prędkość: ");
+    Serial.print(" | Speed: ");
     Serial.println(joystickData.speed);
 }
